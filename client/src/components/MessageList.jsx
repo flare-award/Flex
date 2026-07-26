@@ -1,27 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useApp } from '../state/AppState.jsx';
 import Message from './Message.jsx';
 
-export default function MessageList({ channelId, dmId }) {
-  const { messages, dmMessages, typing, dmTyping } = useApp();
+export default function MessageList({ channelId }) {
+  const { messages, typing } = useApp();
   const listRef = useRef(null);
-  const msgs = channelId ? (messages[channelId] || []) : (dmMessages[dmId] || []);
-  const typingNow = channelId ? (typing[channelId] || []) : (dmTyping[dmId] || []);
+  const msgs = channelId ? (messages[channelId] || []) : [];
+  const typingNow = channelId ? (typing[channelId] || []) : [];
 
-  // Auto-scroll to bottom on new messages
   useEffect(() => {
     const el = listRef.current; if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [msgs.length, channelId, dmId]);
+  }, [msgs.length, channelId]);
 
-  // Group messages from same author within 5 minutes
   const groups = [];
   let last = null;
   for (const m of msgs) {
     if (last && last.author?.id === m.author?.id && m.ts - last.lastTs < 5*60*1000 && !m.replyToId) {
       last.items.push(m); last.lastTs = m.ts;
     } else {
-      last = { author: m.author, firstTs: m.ts, lastTs: m.ts, items: [m], isFirst: !last };
+      last = { author: m.author, firstTs: m.ts, lastTs: m.ts, items: [m] };
       groups.push(last);
     }
   }
@@ -29,10 +27,10 @@ export default function MessageList({ channelId, dmId }) {
   return (
     <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth">
       {msgs.length === 0 && (
-        <div className="text-flex-muted text-sm mt-8">No messages yet. Be the first to say hi!</div>
+        <div className="text-flex-muted text-sm mt-8">No messages yet. Be the first to say hi! Сообщения обновляются realtime через Firebase.</div>
       )}
-      {groups.map((g, gi) => (
-        <MessageGroup key={g.items[0].id} group={g} showAvatar={true} />
+      {groups.map((g) => (
+        <MessageGroup key={g.items[0].id} group={g} />
       ))}
       {typingNow.length > 0 && (
         <div className="flex items-center gap-2 text-flex-muted text-sm mt-2">
@@ -57,7 +55,7 @@ function MessageGroup({ group }) {
           <span className="font-semibold text-white">{a?.displayName || 'Unknown'}</span>
           <span className="text-xs text-flex-muted">{formatTime(group.firstTs)}</span>
         </div>
-        {group.items.map(m => <Message key={m.id} msg={m} compact />)}
+        {group.items.map(m => <Message key={m.id} msg={m} />)}
       </div>
     </div>
   );

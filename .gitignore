@@ -8,8 +8,10 @@ server/data/backups/
 server/data/uploads/*
 !server/data/uploads/.gitkeep
 .env
+.env.local
+client/.env
+client/.env.local
+client/.env.production.local
 .DS_Store
 *.log
-.data/
-.env
 .data/

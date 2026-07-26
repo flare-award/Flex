@@ -1,28 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../state/AppState.jsx';
 import { useAuth } from '../state/Auth.jsx';
-import { api } from '../api.js';
-import ColorPicker from './ColorPicker.jsx';
+import { ref, get } from 'firebase/database';
+import { db } from '../lib/firebase.js';
 
 export default function ModalHost() {
-  const { modal, setModal, refreshGuild, selectGuild, guilds, showToast, user, updateUser, refreshFriends, refreshDms } = useApp();
-  const { logout } = useAuth();
+  const { modal, setModal, showToast } = useApp();
   if (!modal) return null;
-
   function close() { setModal(null); }
 
   return (
     <div className="modal-backdrop" onClick={close}>
       <div className="modal" onClick={e => e.stopPropagation()}>
-        {modal.type === 'createGuild' && <CreateGuildModal close={close} onCreated={async (g) => { await refreshGuild(g.id); selectGuild(g.id); close(); }} />}
-        {modal.type === 'joinGuild' && <JoinGuildModal code={modal.code} close={close} onJoined={async (g) => { await refreshGuild(g.id); selectGuild(g.id); close(); }} />}
+        {modal.type === 'createGuild' && <CreateGuildModal close={close} />}
+        {modal.type === 'joinGuild' && <JoinGuildModal code={modal.code} close={close} />}
         {modal.type === 'invite' && <InviteModal guild={modal.guild} close={close} />}
-        {modal.type === 'createChannel' && <CreateChannelModal guild={modal.guild} categoryId={modal.categoryId} close={close} onDone={async () => { await refreshGuild(modal.guild.id); close(); }} />}
-        {modal.type === 'createCategory' && <CreateCategoryModal guild={modal.guild} close={close} onDone={async () => { await refreshGuild(modal.guild.id); close(); }} />}
-        {modal.type === 'channelSettings' && <ChannelSettingsModal channel={modal.channel} guild={modal.guild} close={close} onDone={async () => { await refreshGuild(modal.guild.id); close(); }} />}
-        {modal.type === 'guildSettings' && <GuildSettingsModal guild={modal.guild} close={close} onDone={async () => { await refreshGuild(modal.guild.id); close(); }} />}
-        {modal.type === 'profile' && <ProfileModal user={modal.user} close={close} />}
+        {modal.type === 'createChannel' && <CreateChannelModal guild={modal.guild} categoryId={modal.categoryId} close={close} />}
+        {modal.type === 'createCategory' && <CreateCategoryModal guild={modal.guild} close={close} />}
+        {modal.type === 'deleteGuild' && <DeleteGuildModal guild={modal.guild} close={close} />}
         {modal.type === 'settings' && <UserSettingsModal close={close} />}
+        {modal.type === 'profile' && <ProfileModal user={modal.user} close={close} />}
+        {modal.type === 'leaveGuild' && <LeaveGuildModal guild={modal.guild} close={close} />}
       </div>
     </div>
   );
@@ -37,13 +35,14 @@ function ModalHeader({ title, close }) {
   );
 }
 
-function CreateGuildModal({ close, onCreated }) {
+function CreateGuildModal({ close }) {
+  const { createGuild } = useApp();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   async function create() {
     if (!name.trim()) return;
     setBusy(true);
-    try { const g = await api.createGuild(name.trim()); onCreated(g); }
+    try { await createGuild(name.trim()); close(); }
     catch (e) { alert(e.message); }
     finally { setBusy(false); }
   }
@@ -51,7 +50,7 @@ function CreateGuildModal({ close, onCreated }) {
     <>
       <ModalHeader title="Create a server" close={close} />
       <div className="p-5">
-        <p className="text-flex-muted text-sm mb-3">Your server is where you and your friends hang out. Make yours and start talking.</p>
+        <p className="text-flex-muted text-sm mb-3">Your server is where you and your friends hang out. Make yours and start talking. In P2P edition server data is stored in Firebase.</p>
         <label className="text-xs font-semibold text-flex-muted uppercase">Server Name</label>
         <input className="input mt-1" autoFocus value={name} onChange={e=>setName(e.target.value.slice(0,100))} placeholder="My Awesome Server" />
         <div className="flex justify-end gap-2 mt-6">
@@ -63,42 +62,54 @@ function CreateGuildModal({ close, onCreated }) {
   );
 }
 
-function JoinGuildModal({ close, onJoined, code: initial = '' }) {
+function JoinGuildModal({ close, code: initial = '' }) {
+  const { joinInvite } = useApp();
   const [code, setCode] = useState(initial || '');
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState(null);
-  async function join() {
-    if (!code.trim()) return;
-    setBusy(true);
-    try { const g = await api.joinInvite(code.trim()); onJoined(g); }
-    catch (e) { alert(e.message); }
-    finally { setBusy(false); }
-  }
-  React.useEffect(() => {
+
+  useEffect(() => {
     if (!code) { setPreview(null); return; }
     let t = setTimeout(async () => {
-      try { const p = await api.lookupInvite(code.trim()); setPreview(p.guild); } catch { setPreview(null); }
+      try {
+        const snap = await get(ref(db, `invites/${code.trim()}`));
+        if (snap.exists()) {
+          const inv = snap.val();
+          const gSnap = await get(ref(db, `guilds/${inv.guildId}`));
+          if (gSnap.exists()) setPreview(gSnap.val());
+          else setPreview(null);
+        } else setPreview(null);
+      } catch { setPreview(null); }
     }, 400);
     return () => clearTimeout(t);
   }, [code]);
+
+  async function join() {
+    if (!code.trim()) return;
+    setBusy(true);
+    try { await joinInvite(code.trim()); close(); }
+    catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
   return (
     <>
       <ModalHeader title="Присоединиться к серверу" close={close} />
       <div className="p-5">
         <label className="text-xs font-semibold text-flex-muted uppercase">Код приглашения</label>
-        <input className="input mt-1" autoFocus value={code} onChange={e=>setCode(e.target.value)} placeholder="flex-home" />
+        <input className="input mt-1" autoFocus value={code} onChange={e=>setCode(e.target.value)} placeholder="AbCd1234" />
         {preview && (
           <div className="mt-3 bg-flex-server rounded-md p-3 flex items-center gap-3">
             <div className="w-12 h-12 rounded-full bg-flex-accent flex items-center justify-center text-white font-bold">
-              {preview.icon ? <img src={preview.icon} className="w-full h-full object-cover rounded-full"/> : (preview.name[0]||'?').toUpperCase()}
+              {(preview.name[0]||'?').toUpperCase()}
             </div>
             <div>
               <div className="text-white font-semibold">{preview.name}</div>
-              <div className="text-flex-muted text-xs">{preview.memberCount} участников</div>
+              <div className="text-flex-muted text-xs">ID: {preview.id.slice(0,8)}…</div>
             </div>
           </div>
         )}
-        <p className="text-xs text-flex-muted mt-1">Ссылка на приглашение: <span className="text-white">/invite/код</span></p>
+        <p className="text-xs text-flex-muted mt-2">Ссылка на приглашение: <span className="text-white">{location.origin + location.pathname.split('/').slice(0,2).join('/') + '/'}#/invite/{'{code}'}</span> — для GitHub Pages используйте hash-роут <code>/#/invite/CODE</code> или обычный путь с 404.html fallback.</p>
         <div className="flex justify-end gap-2 mt-6">
           <button className="btn" onClick={close}>Отмена</button>
           <button className="btn-primary disabled:opacity-50" disabled={busy||!code.trim()} onClick={join}>Войти</button>
@@ -109,33 +120,95 @@ function JoinGuildModal({ close, onJoined, code: initial = '' }) {
 }
 
 function InviteModal({ guild, close }) {
-  const code = guild.invites?.[0]?.code || '';
-  const link = `${location.origin}/invite/${code}`;
-  function copy() { navigator.clipboard.writeText(code); alert('Invite code copied: ' + code); }
+  const { createInviteForGuild, showToast } = useApp();
+  const [codes, setCodes] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [newCode, setNewCode] = useState('');
+
+  useEffect(() => {
+    // fetch existing invites for this guild
+    (async () => {
+      try {
+        const snap = await get(ref(db, `guildInvites/${guild.id}`));
+        if (snap.exists()) {
+          const obj = snap.val();
+          setCodes(Object.keys(obj));
+          if (Object.keys(obj).length > 0) setNewCode(Object.keys(obj)[0]);
+        }
+      } catch {}
+    })();
+  }, [guild.id]);
+
+  async function gen() {
+    setBusy(true);
+    try {
+      const inv = await createInviteForGuild(guild.id);
+      setCodes(prev => [...prev, inv.code]);
+      setNewCode(inv.code);
+      showToast('Приглашение создано');
+    } catch (e) { alert(e.message); }
+    finally { setBusy(false); }
+  }
+
+  const base = window.location.origin + window.location.pathname.replace(/\/[^\/]*$/, '/');
+  // For GH Pages, base includes /Flex/
+  const linkHash = `${base}#/invite/${newCode}`;
+  const linkNormal = `${base}invite/${newCode}`;
+
+  function copy(text) {
+    navigator.clipboard.writeText(text).then(() => showToast('Скопировано'));
+  }
+
   return (
     <>
       <ModalHeader title={`Invite friends to ${guild.name}`} close={close} />
       <div className="p-5">
-        <p className="text-flex-muted text-sm mb-2">Share this invite code with friends. It never expires by default.</p>
-        <div className="flex gap-2">
-          <input className="input flex-1" readOnly value={code} onFocus={e=>e.target.select()} />
-          <button className="btn-primary" onClick={copy}>Copy</button>
+        <p className="text-flex-muted text-sm mb-2">Поделитесь кодом приглашения. Для GitHub Pages используйте hash-ссылку — она гарантированно работает без 404.</p>
+        <div className="flex gap-2 mb-3">
+          <input className="input flex-1" readOnly value={newCode} placeholder="Нажмите 'Создать приглашение'" onFocus={e=>e.target.select()} />
+          <button className="btn-secondary" onClick={()=>copy(newCode)} disabled={!newCode}>Copy code</button>
         </div>
-        <div className="mt-2 text-xs text-flex-muted break-all">or send the link: {link}</div>
+        <div className="space-y-2 text-xs">
+          <div>
+            <div className="text-flex-muted">Hash invite (рекомендуется для GH Pages):</div>
+            <div className="flex gap-2 mt-1">
+              <input className="input flex-1 text-xs" readOnly value={newCode ? linkHash : ''} />
+              <button className="btn-secondary text-xs" disabled={!newCode} onClick={()=>copy(linkHash)}>Copy</button>
+            </div>
+          </div>
+          <div>
+            <div className="text-flex-muted">Обычная ссылка (работает с 404.html fallback):</div>
+            <div className="flex gap-2 mt-1">
+              <input className="input flex-1 text-xs" readOnly value={newCode ? linkNormal : ''} />
+              <button className="btn-secondary text-xs" disabled={!newCode} onClick={()=>copy(linkNormal)}>Copy</button>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-between mt-6">
+          <button className="btn-secondary" onClick={gen} disabled={busy}>{busy ? '...' : 'Создать новое приглашение'}</button>
+          <button className="btn-primary" onClick={close}>Готово</button>
+        </div>
+        {codes.length > 1 && (
+          <div className="mt-4 text-xs text-flex-muted">
+            Существующие коды: {codes.join(', ')}
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-function CreateChannelModal({ guild, categoryId, close, onDone }) {
+function CreateChannelModal({ guild, categoryId, close }) {
+  const { createChannel } = useApp();
   const [type, setType] = useState('text');
   const [name, setName] = useState('');
-  const [isPrivate, setIsPrivate] = useState(false);
+
   async function create() {
     if (!name.trim()) return;
-    await api.createChannel(guild.id, { type, name, categoryId, isPrivate });
-    onDone();
+    try { await createChannel(guild.id, { type, name, categoryId }); close(); }
+    catch (e) { alert(e.message); }
   }
+
   return (
     <>
       <ModalHeader title="Create Channel" close={close} />
@@ -144,22 +217,19 @@ function CreateChannelModal({ guild, categoryId, close, onDone }) {
           <label className={`flex-1 p-3 rounded cursor-pointer border-2 ${type==='text' ? 'border-flex-accent bg-flex-hover' : 'border-transparent bg-flex-server'}`}>
             <input type="radio" name="ctype" className="hidden" checked={type==='text'} onChange={()=>setType('text')} />
             <div className="text-white font-semibold flex items-center gap-2"># Text</div>
-            <div className="text-xs text-flex-muted">Send messages, images, GIFs, emoji</div>
+            <div className="text-xs text-flex-muted">Send messages — realtime via Firebase</div>
           </label>
           <label className={`flex-1 p-3 rounded cursor-pointer border-2 ${type==='voice' ? 'border-flex-accent bg-flex-hover' : 'border-transparent bg-flex-server'}`}>
             <input type="radio" name="ctype" className="hidden" checked={type==='voice'} onChange={()=>setType('voice')} />
             <div className="text-white font-semibold flex items-center gap-2">🔊 Voice</div>
-            <div className="text-xs text-flex-muted">Hang out together with voice, video, and screen share</div>
+            <div className="text-xs text-flex-muted">P2P voice via WebRTC (STUN default)</div>
           </label>
         </div>
         <label className="text-xs font-semibold text-flex-muted uppercase">Channel Name</label>
         <div className="flex items-center gap-1 mt-1">
           <span className="text-xl text-flex-muted">{type==='voice' ? '🔊' : '#'}</span>
-          <input className="input flex-1" autoFocus value={name} onChange={e=>setName(e.target.value.replace(/[^a-z0-9\-_]/gi,'-'))} placeholder="new-channel" />
+          <input className="input flex-1" autoFocus value={name} onChange={e=>setName(e.target.value.replace(/[^a-z0-9-_]/gi,'-'))} placeholder="new-channel" />
         </div>
-        <label className="flex items-center gap-2 mt-3 text-sm">
-          <input type="checkbox" checked={isPrivate} onChange={e=>setIsPrivate(e.target.checked)} /> Private channel
-        </label>
         <div className="flex justify-end gap-2 mt-6">
           <button className="btn" onClick={close}>Cancel</button>
           <button className="btn-primary disabled:opacity-50" disabled={!name.trim()} onClick={create}>Create Channel</button>
@@ -169,8 +239,15 @@ function CreateChannelModal({ guild, categoryId, close, onDone }) {
   );
 }
 
-function CreateCategoryModal({ guild, close, onDone }) {
+function CreateCategoryModal({ guild, close }) {
+  const { createCategory } = useApp();
   const [name, setName] = useState('');
+
+  async function create() {
+    if (!name.trim()) return;
+    try { await createCategory(guild.id, name); close(); } catch (e) { alert(e.message); }
+  }
+
   return (
     <>
       <ModalHeader title="Create Category" close={close} />
@@ -178,284 +255,113 @@ function CreateCategoryModal({ guild, close, onDone }) {
         <input className="input" autoFocus value={name} onChange={e=>setName(e.target.value)} placeholder="Category Name" />
         <div className="flex justify-end gap-2 mt-6">
           <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn-primary disabled:opacity-50" disabled={!name.trim()} onClick={async () => { await api.createCategory(guild.id, name); onDone(); }}>Create</button>
+          <button className="btn-primary disabled:opacity-50" disabled={!name.trim()} onClick={create}>Create</button>
         </div>
       </div>
     </>
   );
 }
 
-function ChannelSettingsModal({ channel, guild, close, onDone }) {
-  const [name, setName] = useState(channel.name);
-  const [topic, setTopic] = useState(channel.topic || '');
-  const [isPrivate, setIsPrivate] = useState(channel.isPrivate);
-  const { user } = useAuth();
-  const isOwner = guild.ownerId === user.id;
-  return (
-    <>
-      <ModalHeader title={`Edit Channel — #${channel.name}`} close={close} />
-      <div className="p-5 overflow-y-auto">
-        <label className="text-xs font-semibold text-flex-muted uppercase">Channel Name</label>
-        <input className="input mt-1 mb-3" value={name} onChange={e=>setName(e.target.value)} />
-        <label className="text-xs font-semibold text-flex-muted uppercase">Topic</label>
-        <input className="input mt-1 mb-3" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Add a topic" />
-        <label className="flex items-center gap-2 mb-3 text-sm">
-          <input type="checkbox" checked={isPrivate} onChange={e=>setIsPrivate(e.target.checked)} /> Private channel
-        </label>
-        <div className="flex gap-2 justify-end mt-6">
-          {isOwner && <button className="btn-danger mr-auto" onClick={async () => { if (!confirm('Delete this channel?')) return; await api.deleteChannel(channel.id); onDone(); }}>Delete Channel</button>}
-          <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn-primary" onClick={async () => { await api.updateChannel(channel.id, { name, topic, isPrivate }); onDone(); }}>Save</button>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function GuildSettingsModal({ guild, close, onDone }) {
-  const [name, setName] = useState(guild.name);
-  const [icon, setIcon] = useState(null);
-  const [banner, setBanner] = useState(null);
-  const [rolesOpen, setRolesOpen] = useState(false);
-  const [newRoleName, setNewRoleName] = useState('');
-  async function save() {
-    const fd = new FormData();
-    if (name !== guild.name) fd.append('name', name);
-    if (icon) fd.append('icon', icon);
-    if (banner) fd.append('banner', banner);
-    await api.updateGuild(guild.id, fd);
-    onDone();
-  }
-  async function makeRole() {
-    if (!newRoleName.trim()) return;
-    await api.createRole(guild.id, { name: newRoleName });
-    setNewRoleName(''); onDone();
+function DeleteGuildModal({ guild, close }) {
+  const { deleteGuild } = useApp();
+  async function doDelete() {
+    if (!confirm(`Delete server ${guild.name}? This cannot be undone.`)) return;
+    try { await deleteGuild(guild.id); close(); } catch (e) { alert(e.message); }
   }
   return (
     <>
-      <ModalHeader title={`Server Settings — ${guild.name}`} close={close} />
-      <div className="p-5 overflow-y-auto">
-        <label className="text-xs font-semibold text-flex-muted uppercase">Server Name</label>
-        <input className="input mt-1 mb-3" value={name} onChange={e=>setName(e.target.value)} />
-        <label className="text-xs font-semibold text-flex-muted uppercase block">Icon</label>
-        <div className="flex items-center gap-3 my-2">
-          <div className="w-16 h-16 rounded-2xl bg-flex-accent flex items-center justify-center overflow-hidden">
-            {guild.icon && !icon && <img src={guild.icon} className="w-full h-full object-cover"/>}
-            {icon && <img src={URL.createObjectURL(icon)} className="w-full h-full object-cover"/>}
-            {!guild.icon && !icon && <span className="text-white font-bold text-xl">{name[0]?.toUpperCase()}</span>}
-          </div>
-          <input type="file" accept="image/png,image/jpeg,image/gif" onChange={e=>setIcon(e.target.files[0])} />
-        </div>
-        <label className="text-xs font-semibold text-flex-muted uppercase block mt-2">Banner</label>
-        <input type="file" accept="image/png,image/jpeg,image/gif" onChange={e=>setBanner(e.target.files[0])} className="mb-3" />
-
-        <div className="border-t border-black/30 my-4 pt-4">
-          <button onClick={() => setRolesOpen(o => !o)} className="text-white font-semibold flex items-center justify-between w-full">
-            Roles <span>{rolesOpen ? '▼' : '▶'}</span>
-          </button>
-          {rolesOpen && (
-            <div className="mt-3 space-y-2">
-              {guild.roles.map(r => (
-                <div key={r.id} className="flex items-center gap-2 bg-flex-server p-2 rounded">
-                  <span className="w-4 h-4 rounded-full" style={{background: r.color}} />
-                  <span className="flex-1 text-white text-sm">{r.name}</span>
-                  <input type="color" value={r.color} onChange={async e => { await api.updateRole(guild.id, r.id, { color: e.target.value }); onDone(); }} />
-                </div>
-              ))}
-              <div className="flex gap-2">
-                <input className="input flex-1" placeholder="New role name" value={newRoleName} onChange={e=>setNewRoleName(e.target.value)} />
-                <button className="btn-primary" onClick={makeRole}>Add</button>
-              </div>
-            </div>
-          )}
-        </div>
-
+      <ModalHeader title={`Delete ${guild.name}`} close={close} />
+      <div className="p-5">
+        <p className="text-sm text-flex-muted">Are you sure you want to delete <span className="text-white">{guild.name}</span>? This will delete all channels, messages and voice data.</p>
         <div className="flex justify-end gap-2 mt-6">
           <button className="btn" onClick={close}>Cancel</button>
-          <button className="btn-primary" onClick={save}>Save</button>
+          <button className="btn-danger" onClick={doDelete}>Delete Server</button>
         </div>
       </div>
     </>
   );
 }
 
-function ProfileModal({ user: profileUser, close }) {
-  const { user: me, refreshFriends } = useApp();
-  const isMe = me.id === profileUser.id;
-  const friends = useApp().friends;
-  const fr = friends.find(f => f.user?.id === profileUser.id);
-  async function addFriend() {
-    try { await api.addFriend(profileUser.username); refreshFriends(); showToast?.('Friend request sent'); } catch (e) { alert(e.message); }
+function LeaveGuildModal({ guild, close }) {
+  const { leaveGuild } = useApp();
+  async function doLeave() {
+    try { await leaveGuild(guild.id); close(); } catch (e) { alert(e.message); }
   }
-  async function dm() {
-    const dm = await api.createDm({ userId: profileUser.id });
-    location.hash = '';
-    window.location.href = `/channels/@me/${dm.id}`;
-    close();
-  }
-  const banner = profileUser.banner;
   return (
     <>
-      <div className="h-[120px] relative" style={{ background: banner ? `url(${banner}) center/cover` : `linear-gradient(135deg, ${profileUser.profileColor1||'#5865f2'}, ${profileUser.profileColor2||'#eb459e'})` }} />
-      <div className="p-5 pt-0 relative">
-        <div className="avatar w-[80px] h-[80px] border-[6px] border-flex-sidebar -mt-10 bg-flex-accent flex items-center justify-center text-3xl font-bold overflow-hidden">
-          {profileUser.avatar ? <img src={profileUser.avatar} className="w-full h-full object-cover" /> : profileUser.displayName[0]?.toUpperCase()}
+      <ModalHeader title={`Leave ${guild.name}`} close={close} />
+      <div className="p-5">
+        <p className="text-sm text-flex-muted">Leave <span className="text-white">{guild.name}</span>?</p>
+        <div className="flex justify-end gap-2 mt-6">
+          <button className="btn" onClick={close}>Cancel</button>
+          <button className="btn-danger" onClick={doLeave}>Leave Server</button>
         </div>
-        <div className="bg-flex-server rounded-md p-4 mt-3">
-          <div className="text-white text-xl font-bold">{profileUser.displayName}</div>
-          <div className="text-flex-muted text-sm">@{profileUser.username}</div>
-          {profileUser.customStatus && <div className="mt-2 text-sm bg-black/30 rounded px-2 py-1 inline-block">{profileUser.customStatus}</div>}
-          <div className="border-t border-black/30 my-3" />
-          <div className="text-xs font-semibold text-flex-muted uppercase mb-1">About Me</div>
-          <div className="text-sm whitespace-pre-wrap">{profileUser.aboutMe || 'No about me set.'}</div>
-          <div className="text-xs font-semibold text-flex-muted uppercase mt-3 mb-1">Member Since</div>
-          <div className="text-sm">{new Date(profileUser.createdAt).toLocaleDateString()}</div>
-        </div>
-        {!isMe && (
-          <div className="flex gap-2 mt-3 justify-end">
-            <button className="btn-secondary" onClick={dm}>Message</button>
-            {!fr && <button className="btn-primary" onClick={addFriend}>Add Friend</button>}
-            <button className="btn-secondary" onClick={() => { navigator.clipboard.writeText(profileUser.id); }}>Copy ID</button>
+      </div>
+    </>
+  );
+}
+
+function ProfileModal({ user, close }) {
+  return (
+    <>
+      <div className="p-5">
+        <div className="flex gap-3 items-center">
+          <div className="avatar w-16 h-16 bg-flex-accent flex items-center justify-center font-bold text-xl">
+            {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : (user.displayName?.[0] || '?').toUpperCase()}
           </div>
-        )}
-        <button className="absolute top-2 right-2 text-white/80 hover:text-white text-xl" onClick={close}>✕</button>
+          <div>
+            <div className="text-white font-bold text-lg">{user.displayName}</div>
+            <div className="text-flex-muted text-sm">@{user.username}</div>
+          </div>
+        </div>
+        <div className="mt-4 bg-flex-server rounded p-3 text-sm">
+          <div className="text-xs uppercase text-flex-muted font-semibold">About</div>
+          <div className="text-flex-text mt-1">{user.aboutMe || 'No info'}</div>
+          <div className="text-xs uppercase text-flex-muted font-semibold mt-3">Created</div>
+          <div>{user.createdAt ? new Date(user.createdAt).toLocaleString() : '—'}</div>
+        </div>
+        <div className="flex justify-end mt-4">
+          <button className="btn-primary" onClick={close}>Close</button>
+        </div>
       </div>
     </>
   );
 }
 
 function UserSettingsModal({ close }) {
-  const { user, updateUser, logout } = useAuth();
-  const { refreshFriends, refreshDms, showToast } = useApp();
-  const [tab, setTab] = useState('account');
-  const [displayName, setDisplayName] = useState(user.displayName);
-  const [about, setAbout] = useState(user.aboutMe);
-  const [username, setUsername] = useState(user.username);
-  const [customStatus, setCustomStatus] = useState(user.customStatus);
-  const [avatar, setAvatar] = useState(null);
-  const [banner, setBanner] = useState(null);
-  const [c1, setC1] = useState(user.profileColor1 || '#5865f2');
-  const [c2, setC2] = useState(user.profileColor2 || '#eb459e');
-  const [bc, setBc] = useState(user.bannerColor || '#1e1f22');
+  const { user, logout } = useAuth();
+  const [displayName, setDisplayName] = useState(user?.displayName || '');
+  const [about, setAbout] = useState(user?.aboutMe || '');
+
   async function save() {
-    const fd = new FormData();
-    if (displayName !== user.displayName) fd.append('displayName', displayName);
-    if (about !== user.aboutMe) fd.append('aboutMe', about);
-    if (username !== user.username) fd.append('username', username);
-    if (customStatus !== user.customStatus) fd.append('customStatus', customStatus);
-    fd.append('profileColor1', c1); fd.append('profileColor2', c2);
-    fd.append('bannerColor', bc);
-    if (avatar) fd.append('avatar', avatar);
-    if (banner) fd.append('banner', banner);
     try {
-      const u = await api.updateMe(fd);
-      updateUser(u);
-      showToast('Profile saved');
+      const { updateProfile } = await import('../lib/db.js');
+      await updateProfile(user.id, { displayName, aboutMe: about });
+      // update local cache
       close();
     } catch (e) { alert(e.message); }
   }
+
   return (
     <>
-      <ModalHeader title="User Settings" close={close} />
-      <div className="flex min-h-[500px]">
-        <div className="w-48 bg-flex-server p-2 text-sm">
-          {[
-            ['account','My Account'],
-            ['profile','User Profile'],
-            ['appearance','Appearance'],
-          ].map(([id,label]) => (
-            <button key={id} onClick={()=>setTab(id)} className={`w-full text-left px-2 py-1.5 rounded ${tab===id ? 'bg-flex-active text-white' : 'text-flex-muted hover:bg-flex-hover/60 hover:text-white'}`}>{label}</button>
-          ))}
-          <button onClick={() => { logout(); close(); }} className="w-full text-left px-2 py-1.5 rounded text-flex-red hover:bg-flex-red/20 mt-4">Log Out</button>
+      <ModalHeader title="User Settings — P2P Edition" close={close} />
+      <div className="p-5">
+        <div className="text-sm text-flex-muted mb-3">Профиль хранится в Firebase Realtime Database. Аватар — пока только URL/dataURL (можно вставить позже).</div>
+        <label className="text-xs font-semibold text-flex-muted uppercase">Display Name</label>
+        <input className="input mt-1 mb-3" value={displayName} onChange={e=>setDisplayName(e.target.value.slice(0,32))} />
+        <label className="text-xs font-semibold text-flex-muted uppercase">About Me</label>
+        <textarea className="input mt-1 mb-3" rows={3} value={about} onChange={e=>setAbout(e.target.value.slice(0,280))} />
+        <div className="flex justify-between mt-6">
+          <button className="btn-danger" onClick={()=>{ logout(); close(); }}>Log Out</button>
+          <div className="flex gap-2">
+            <button className="btn" onClick={close}>Cancel</button>
+            <button className="btn-primary" onClick={save}>Save</button>
+          </div>
         </div>
-        <div className="flex-1 p-5 overflow-y-auto">
-          {tab === 'account' && (
-            <div>
-              <h3 className="text-white font-bold mb-3">My Account</h3>
-              <label className="text-xs font-semibold text-flex-muted uppercase">Display Name</label>
-              <input className="input mt-1 mb-3" value={displayName} onChange={e=>setDisplayName(e.target.value.slice(0,32))} maxLength={32} />
-              <label className="text-xs font-semibold text-flex-muted uppercase">Username</label>
-              <input className="input mt-1 mb-1" value={username} onChange={e=>setUsername(e.target.value.toLowerCase())} />
-              <div className="text-xs text-flex-muted mb-3">2-32 lowercase latin letters/digits/dash/underscore/tilde. Can be changed once every 15 minutes.</div>
-              <label className="text-xs font-semibold text-flex-muted uppercase">Custom status</label>
-              <input className="input mt-1 mb-3" value={customStatus} onChange={e=>setCustomStatus(e.target.value.slice(0,64))} />
-              <label className="text-xs font-semibold text-flex-muted uppercase">About Me</label>
-              <textarea className="input mt-1 mb-3" rows={3} value={about} onChange={e=>setAbout(e.target.value.slice(0,280))} />
-              <div className="border-t border-black/30 my-3" />
-              <div className="text-flex-muted text-sm mb-2">Email: <span className="text-white">{user.email || '—'}</span></div>
-              <div className="flex gap-2 justify-end">
-                <button className="btn" onClick={close}>Cancel</button>
-                <button className="btn-primary" onClick={save}>Save Changes</button>
-              </div>
-            </div>
-          )}
-          {tab === 'profile' && (
-            <div>
-              <h3 className="text-white font-bold mb-3">User Profile</h3>
-              <div className="rounded-md overflow-hidden mb-4">
-                <div className="h-28 relative" style={{ background: banner ? `url(${URL.createObjectURL(banner)}) center/cover` : (user.banner ? `url(${user.banner}) center/cover` : bc) }} />
-                <div className="p-3 pt-0 bg-flex-server">
-                  <div className="avatar w-16 h-16 border-[5px] border-flex-server -mt-8 bg-flex-accent flex items-center justify-center text-xl font-bold overflow-hidden">
-                    {avatar ? <img src={URL.createObjectURL(avatar)} className="w-full h-full object-cover"/> : (user.avatar ? <img src={user.avatar} className="w-full h-full object-cover"/> : displayName[0]?.toUpperCase())}
-                  </div>
-                </div>
-              </div>
-              <label className="text-xs font-semibold text-flex-muted uppercase">Avatar (10MB, png/jpg/gif)</label>
-              <input type="file" accept="image/png,image/jpeg,image/gif" onChange={e=>setAvatar(e.target.files[0])} className="mb-3" />
-              <label className="text-xs font-semibold text-flex-muted uppercase">Banner (10MB, 558×197 auto-cropped)</label>
-              <input type="file" accept="image/png,image/jpeg,image/gif" onChange={e=>setBanner(e.target.files[0])} className="mb-3" />
-              <label className="text-xs font-semibold text-flex-muted uppercase">Banner color (if no banner image)</label>
-              <ColorPicker value={bc} onChange={setBc} />
-              <label className="text-xs font-semibold text-flex-muted uppercase mt-4 block">Profile gradient</label>
-              <div className="flex gap-2 items-center">
-                <ColorPicker value={c1} onChange={setC1} />
-                <span className="text-flex-muted">→</span>
-                <ColorPicker value={c2} onChange={setC2} />
-                <div className="h-8 flex-1 rounded" style={{ background: `linear-gradient(90deg, ${c1}, ${c2})` }} />
-              </div>
-              <div className="flex gap-2 justify-end mt-6">
-                <button className="btn" onClick={close}>Cancel</button>
-                <button className="btn-primary" onClick={save}>Save Changes</button>
-              </div>
-            </div>
-          )}
-          {tab === 'appearance' && (
-            <AppearanceTab close={close} />
-          )}
+        <div className="mt-6 text-[11px] text-flex-muted bg-[#1e1f22] p-2 rounded">
+          Памятка: голос P2P без TURN не всегда соединяет. Если в вашей сети не работает — добавьте TURN сервер в <code>VITE_ICE_SERVERS</code> secret и пересоберите.
         </div>
       </div>
     </>
-  );
-}
-
-function AppearanceTab({ close }) {
-  const { user, updateUser } = useAuth();
-  const [theme, setTheme] = useState(user.theme || 'dark');
-  const [customColor, setCustomColor] = useState(user.customColor || '#5865f2');
-  function applyTheme(t) {
-    setTheme(t);
-    document.documentElement.classList.toggle('dark', t !== 'light');
-    api.updateMe({ theme: t });
-    updateUser({ ...user, theme: t });
-  }
-  return (
-    <div>
-      <h3 className="text-white font-bold mb-3">Appearance</h3>
-      <div className="text-xs font-semibold text-flex-muted uppercase mb-2">Theme</div>
-      <div className="flex gap-3 mb-4">
-        {['dark','light','custom'].map(t => (
-          <button key={t} onClick={() => applyTheme(t)} className={`w-32 rounded overflow-hidden border-2 ${theme===t ? 'border-flex-accent' : 'border-transparent'}`}>
-            <div className={`h-16 ${t==='dark' ? 'bg-[#313338]' : t==='light' ? 'bg-white' : ''}`} style={t==='custom' ? {background: customColor} : {}} />
-            <div className="py-1 bg-flex-sidebar text-white text-center text-sm capitalize">{t}</div>
-          </button>
-        ))}
-      </div>
-      {theme === 'custom' && <ColorPicker value={customColor} onChange={c => { setCustomColor(c); document.documentElement.style.setProperty('--flex-bg', c); }} />}
-      <div className="text-xs font-semibold text-flex-muted uppercase mt-4 mb-2">Chat font scaling</div>
-      <div className="text-sm text-flex-muted">15px (default) — can be adjusted in future updates.</div>
-      <div className="flex justify-end mt-6">
-        <button className="btn-primary" onClick={close}>Done</button>
-      </div>
-    </div>
   );
 }

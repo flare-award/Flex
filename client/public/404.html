@@ -2,21 +2,39 @@
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Flex</title>
+    <title>Flex P2P</title>
     <script>
-      // GitHub Pages SPA redirect trick — preserve path+query+hash, send to root.
+      // GitHub Pages SPA redirect — preserve path+query+hash, send to index via ?p=
       (function() {
+        var l = window.location;
+        // Detect base path for project page e.g. /Flex/404.html -> /Flex/
         var base = '/';
-        // Support project page: detect repo prefix by looking at current path minus 404.html
-        var path = location.pathname;
+        var path = l.pathname;
         if (path.endsWith('/404.html')) {
-          // e.g. "/Flex/404.html" -> base="/Flex/"
           var segs = path.split('/').filter(Boolean);
-          segs.pop();
+          segs.pop(); // remove 404.html
           base = '/' + segs.join('/') + '/';
+        } else {
+          // fallback: if path contains repo name as first segment, keep it as base
+          // This handles custom base via VITE_BASE
+          var parts = path.split('/').filter(Boolean);
+          if (parts.length > 0) {
+            // If URL is like /Flex/xxx, keep /Flex/
+            // We don't know repo name for sure, so keep first segment as base for safety if more than 0 segments and not root
+            // For Flex repo, repo name is Flex, so base = /Flex/
+            // If deployed at root custom domain, base is /
+            var knownRepos = ['Flex', 'flex']; // allow both cases
+            if (knownRepos.some(r => parts[0].toLowerCase() === r.toLowerCase())) {
+              base = '/' + parts[0] + '/';
+            }
+          }
         }
-        var target = base + '?p=' + encodeURIComponent(location.pathname + location.search + location.hash);
-        location.replace(target);
+        // Preserve full path including base? The trick: send ?p=fullPath
+        var fullPath = l.pathname + l.search + l.hash;
+        // Remove base from fullPath to avoid double base? Our index.html will reconstruct base+rel
+        // Keep fullPath as is, index.html code handles base+rel
+        var target = base + '?p=' + encodeURIComponent(fullPath);
+        l.replace(target);
       })();
     </script>
   </head>
