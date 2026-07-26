@@ -1,0 +1,24 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Flex</title>
+    <script>
+      // GitHub Pages SPA redirect trick — preserve path+query+hash, send to root.
+      (function() {
+        var base = '/';
+        // Support project page: detect repo prefix by looking at current path minus 404.html
+        var path = location.pathname;
+        if (path.endsWith('/404.html')) {
+          // e.g. "/Flex/404.html" -> base="/Flex/"
+          var segs = path.split('/').filter(Boolean);
+          segs.pop();
+          base = '/' + segs.join('/') + '/';
+        }
+        var target = base + '?p=' + encodeURIComponent(location.pathname + location.search + location.hash);
+        location.replace(target);
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>

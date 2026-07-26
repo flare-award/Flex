@@ -1,0 +1,11 @@
+{
+  "install": "cd server && npm install --no-audit --no-fund && cd ../client && npm install --no-audit --no-fund && npm run build",
+  "start": "NODE_ENV=production FLEX_DATA_DIR=.data PORT=3000 node server/src/index.js",
+  "watch": {
+    "ignore": ["server/data", "client/dist", "client/node_modules", "server/node_modules", ".data"]
+  },
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3000"
+  }
+}

@@ -1,0 +1,22 @@
+# Copy this to /etc/caddy/Caddyfile on a Linux VPS after installing Caddy (https://caddyserver.com/docs/install)
+# Replace YOUR-DOMAIN with your real domain (e.g. flex.example.com).
+# Make sure DNS for that domain points to the server's IP.
+# Run: `docker compose up -d` in the Flex folder first to start the app on port 4000,
+# then `systemctl restart caddy` to apply the config.
+
+YOUR-DOMAIN {
+	encode gzip zstd
+	reverse_proxy localhost:4000 {
+		# Websocket support (Socket.IO voice/signaling)
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+	# Allow large uploads (10MB + overhead)
+	request_body {
+		max_size 15MB
+	}
+}
