@@ -1,8 +1,28 @@
+---
+title: Flex
+emoji: 💬
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # Flex
 
 Бесплатный аналог Discord для двоих (и небольших компаний): серверы, текстовые и голосовые каналы через сервер-релей, личные сообщения, реакции, файлы, экранная демонстрация.
 
-Схема бесплатного хостинга: **фронтенд на GitHub Pages + бэкенд на Glitch.com**, для поддержки бэкенда «не спящим» — UptimeRobot (тоже бесплатно). Работает из РФ и Молдовы без VPN, голос через сервер — пробивает любые NAT.
+## Hugging Face Spaces (Docker)
+
+Репозиторий готов к запуску как Docker Space: Dockerfile собирает клиент и запускает Express/Socket.IO на `0.0.0.0:7860`. Создайте Space с SDK **Docker**, подключите этот GitHub-репозиторий и включите **Persistent Storage**. HF монтирует его в `/data`; там хранятся `db.json`, загрузки и резервные копии.
+
+В настройках Space добавьте secrets/variables:
+
+- `JWT_SECRET` — случайное секретное значение длиной не менее 32 байт;
+- `FLEX_DATA_DIR=/data`;
+- `PORT=7860` (Dockerfile уже задаёт это значение).
+
+Клиент и API обслуживаются с одного origin, поэтому production CORS намеренно отключён, а Socket.IO поддерживает WebSocket и polling. Голос передаётся бинарными Opus/WebM-фрагментами через серверный Socket.IO relay, а не через P2P.
 
 ## Возможности
 
