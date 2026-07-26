@@ -1,0 +1,3 @@
+# Hugging Face Spaces Docker configuration.
+sdk: docker
+app_port: 7860
