@@ -1,0 +1,23 @@
+version: "3.8"
+
+services:
+  flex:
+    build: .
+    container_name: flex
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - flex-data:/data
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - JWT_SECRET=${JWT_SECRET:-change-me-please-to-a-long-random-string}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  flex-data:
