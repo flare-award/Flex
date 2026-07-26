@@ -1,0 +1,163 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "profiles": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid == $uid",
+        ".validate": "newData.hasChildren(['uid','username','displayName']) && newData.child('uid').val() == $uid"
+      }
+    },
+
+    "usernames": {
+      "$username": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.val() == auth.uid) && (!newData.exists() || newData.val() == auth.uid)",
+        ".validate": "newData.isString() && newData.val().length >= 2"
+      }
+    },
+
+    "guilds": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        ".write": "auth != null && ( !data.exists() || root.child('guildMembers').child($guildId).child(auth.uid).child('role').val() == 'owner' )"
+      }
+    },
+
+    "guildMembers": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        "$uid": {
+          ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+          ".write": "auth != null && ( $uid == auth.uid || root.child('guildMembers').child($guildId).child(auth.uid).child('role').val() == 'owner' )"
+        }
+      }
+    },
+
+    "userGuilds": {
+      "$uid": {
+        ".read": "auth != null && $uid == auth.uid",
+        ".write": "auth != null && $uid == auth.uid",
+        "$guildId": {
+          ".read": "auth != null && $uid == auth.uid",
+          ".write": "auth != null && $uid == auth.uid"
+        }
+      }
+    },
+
+    "guildChannels": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        "$channelId": {
+          ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+          ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+        }
+      }
+    },
+
+    "guildCategories": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        "$catId": {
+          ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+          ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+        }
+      }
+    },
+
+    "messages": {
+      "$channelId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "$messageId": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('authorId').val() == auth.uid)",
+          ".validate": "newData.hasChildren(['id','channelId','authorId','ts']) && newData.child('channelId').val() == $channelId && newData.child('authorId').val() == auth.uid"
+        }
+      }
+    },
+
+    "typing": {
+      "$channelId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".read": "auth != null",
+          ".write": "auth != null && $uid == auth.uid"
+        }
+      }
+    },
+
+    "invites": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('createdBy').val() == auth.uid || root.child('guildMembers').child(data.child('guildId').val()).child(auth.uid).exists())",
+        ".validate": "newData.hasChildren(['code','guildId','createdBy'])"
+      }
+    },
+
+    "guildInvites": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        "$code": {
+          ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+          ".write": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+        }
+      }
+    },
+
+    "voice": {
+      "$guildId": {
+        ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+        "$channelId": {
+          ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+          "state": {
+            ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+            "$uid": {
+              ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+              ".write": "auth != null && $uid == auth.uid && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+            }
+          },
+          "offers": {
+            ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+            "$toUid": {
+              ".read": "auth != null && $toUid == auth.uid && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+              "$fromUid": {
+                ".read": "auth != null && $toUid == auth.uid",
+                ".write": "auth != null && $fromUid == auth.uid && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+              }
+            }
+          },
+          "answers": {
+            ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+            "$toUid": {
+              ".read": "auth != null && $toUid == auth.uid && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+              "$fromUid": {
+                ".read": "auth != null && $toUid == auth.uid",
+                ".write": "auth != null && $fromUid == auth.uid && root.child('guildMembers').child($guildId).child(auth.uid).exists()"
+              }
+            }
+          },
+          "candidates": {
+            ".read": "auth != null && root.child('guildMembers').child($guildId).child(auth.uid).exists()",
+            "$toUid": {
+              ".read": "auth != null && $toUid == auth.uid",
+              "$fromUid": {
+                ".read": "auth != null && $toUid == auth.uid",
+                ".write": "auth != null && $fromUid == auth.uid",
+                "$candId": {
+                  ".read": "auth != null && $toUid == auth.uid",
+                  ".write": "auth != null && $fromUid == auth.uid"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,52 +1,31 @@
-import React, { useState } from 'react';
-import { Routes, Route, NavLink, useNavigate, useParams } from 'react-router-dom';
+import React from 'react';
+import { Routes, Route, useNavigate } from 'react-router-dom';
 import ServerSidebar from '../components/ServerSidebar.jsx';
 import ChannelSidebar from '../components/ChannelSidebar.jsx';
 import ChatView from '../components/ChatView.jsx';
 import MemberList from '../components/MemberList.jsx';
-import DMView from '../components/DMView.jsx';
-import DMSidebar from '../components/DMSidebar.jsx';
-import UserPanel from '../components/UserPanel.jsx';
 import VoiceOverlay from '../components/VoiceOverlay.jsx';
 import ModalHost from '../components/ModalHost.jsx';
 import Toast from '../components/Toast.jsx';
 import { useApp } from '../state/AppState.jsx';
 
 export default function MainApp() {
-  const { activeGuildId, activeChannelId, activeDmId, voice } = useApp();
-  const isDM = activeGuildId === '@me' || !!activeDmId;
+  const { activeChannelId, voice } = useApp();
 
   return (
     <div className="h-full w-full flex flex-col bg-flex-server">
       <div className="flex flex-1 min-h-0">
         <ServerSidebar />
-        {isDM ? (
-          <>
-            <DMSidebar />
-            <div className="flex-1 flex flex-col min-w-0 bg-flex-bg">
-              <Routes>
-                <Route path="@me" element={<FriendsView />} />
-                <Route path="@me/:dmId" element={<DMView />} />
-                <Route path="*" element={<div />} />
-              </Routes>
-            </div>
-          </>
-        ) : (
-          <>
-            <ChannelSidebar />
-            <div className="flex-1 flex flex-col min-w-0 bg-flex-bg">
-              <Routes>
-                <Route path=":guildId/:channelId" element={<ChatView />} />
-                <Route path="*" element={
-                  <div className="flex-1 flex items-center justify-center text-flex-muted">
-                    Select a channel to start chatting
-                  </div>
-                } />
-              </Routes>
-            </div>
-            {activeChannelId && <MemberList />}
-          </>
-        )}
+        <ChannelSidebar />
+        <div className="flex-1 flex flex-col min-w-0 bg-flex-bg">
+          <Routes>
+            <Route path=":guildId/:channelId" element={<ChatView />} />
+            <Route path=":guildId" element={<SelectChannelPrompt />} />
+            <Route path="@me" element={<HomeView />} />
+            <Route path="*" element={<SelectChannelPrompt />} />
+          </Routes>
+        </div>
+        {activeChannelId && <MemberList />}
       </div>
       {voice.channelId && <VoiceOverlay />}
       <ModalHost />
@@ -55,99 +34,52 @@ export default function MainApp() {
   );
 }
 
-function FriendsView() {
-  const { friends, showToast, refreshFriends } = useApp();
-  const [tab, setTab] = useState('online');
-  const [addName, setAddName] = useState('');
-  const accepted = friends.filter(f => f.status === 'accepted');
-  const pending = friends.filter(f => f.status === 'pending');
-  const incoming = pending.filter(f => f.direction === 'incoming');
-  const outgoing = pending.filter(f => f.direction === 'outgoing');
-
-  async function addFriend(e) {
-    e.preventDefault();
-    if (!addName.trim()) return;
-    try {
-      const { api } = await import('../api.js');
-      await api.addFriend(addName.trim());
-      setAddName('');
-      refreshFriends();
-      showToast('Friend request sent');
-    } catch (e) { showToast(e.message, 'error'); }
-  }
-
+function SelectChannelPrompt() {
+  const { guilds } = useApp();
   return (
-    <div className="flex-1 flex min-h-0">
-      <div className="flex-1 overflow-y-auto p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-2xl font-bold text-white">Friends</h2>
-          <div className="flex gap-2 text-sm">
-            {['online','all','pending','blocked'].map(t => (
-              <button key={t} onClick={() => setTab(t)} className={`px-3 py-1 rounded ${tab===t ? 'bg-flex-accent text-white' : 'text-flex-muted hover:text-white'}`}>{t[0].toUpperCase()+t.slice(1)}</button>
-            ))}
-            <button className="px-3 py-1 rounded bg-flex-green text-white">Add Friend</button>
-          </div>
-        </div>
-        <form onSubmit={addFriend} className="bg-flex-sidebar p-4 rounded-md mb-4">
-          <label className="text-xs uppercase text-flex-green font-bold block mb-1">Add Friend</label>
-          <p className="text-flex-muted text-sm mb-2">You can add friends with their Flex username (lowercase).</p>
-          <div className="flex gap-2">
-            <input className="input flex-1" placeholder="username" value={addName} onChange={e=>setAddName(e.target.value)} />
-            <button className="btn-primary disabled:opacity-50" disabled={!addName.trim()}>Send Friend Request</button>
-          </div>
-        </form>
-
-        {tab === 'pending' && (
-          <section className="mb-6">
-            <h3 className="text-xs uppercase font-bold text-flex-muted mb-2">Pending — Incoming ({incoming.length})</h3>
-            {incoming.map(f => <FriendRow key={f.id} f={f} incoming />)}
-            <h3 className="text-xs uppercase font-bold text-flex-muted mb-2 mt-4">Pending — Outgoing ({outgoing.length})</h3>
-            {outgoing.map(f => <FriendRow key={f.id} f={f} />)}
-          </section>
-        )}
-        {(tab === 'online' || tab === 'all') && (
-          <section>
-            <h3 className="text-xs uppercase font-bold text-flex-muted mb-2">{tab === 'online' ? 'Online' : 'All friends'} — {accepted.length}</h3>
-            {accepted.length === 0 && <div className="text-flex-muted text-sm">No friends yet. Share your username (e.g. "demo") to add people.</div>}
-            {accepted.map(f => <FriendRow key={f.id} f={f} />)}
-          </section>
-        )}
-        {tab === 'blocked' && <div className="text-flex-muted text-sm">Block list is empty.</div>}
+    <div className="flex-1 flex items-center justify-center flex-col gap-4 p-8 text-center">
+      <div className="w-16 h-16 rounded-full bg-flex-accent flex items-center justify-center text-white text-3xl">F</div>
+      <div className="text-white font-bold text-xl">Добро пожаловать в Flex P2P!</div>
+      <div className="text-flex-muted text-sm max-w-md">
+        Это статическая версия без Node/Express бэкенда. Сообщения и серверы живут в Firebase Realtime Database, голос — напрямую между браузерами через WebRTC P2P.
+        {guilds.length === 0 ? ' Создайте сервер слева кнопкой +.' : ' Выберите канал слева.'}
+      </div>
+      <div className="bg-[#1e1f22] p-3 rounded text-[11px] text-flex-yellow max-w-md border border-flex-yellow/20">
+        Голос работает напрямую между браузерами. В некоторых мобильных, корпоративных и CGNAT-сетях соединение без TURN-сервера может не установиться. Это честное ограничение P2P.
       </div>
     </div>
   );
 }
 
-function FriendRow({ f, incoming }) {
-  const { selectDm, refreshFriends } = useApp();
+function HomeView() {
+  const { guilds } = useApp();
   const navigate = useNavigate();
-  async function accept() { const { api } = await import('../api.js'); await api.acceptFriend(f.id); refreshFriends(); }
-  async function remove() { const { api } = await import('../api.js'); await api.removeFriend(f.id); refreshFriends(); }
-  async function message() {
-    const { api } = await import('../api.js');
-    const dm = await api.createDm({ userId: f.user.id });
-    navigate(`/channels/@me/${dm.id}`);
-  }
   return (
-    <div className="flex items-center gap-3 py-2 px-3 rounded hover:bg-flex-hover/60 group">
-      <div className="avatar w-8 h-8 bg-flex-accent flex items-center justify-center font-semibold">
-        {f.user.avatar ? <img src={f.user.avatar} className="w-full h-full object-cover" /> : f.user.displayName[0]?.toUpperCase()}
+    <div className="flex-1 overflow-y-auto p-6">
+      <h2 className="text-2xl font-bold text-white mb-2">Flex P2P — Home</h2>
+      <p className="text-flex-muted text-sm mb-4">Бесплатная статическая P2P версия для GitHub Pages. Без Docker, без Socket.IO, без серверного relay.</p>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="bg-flex-sidebar p-4 rounded-md">
+          <h3 className="text-white font-semibold mb-2">Ваши серверы ({guilds.length})</h3>
+          {guilds.length === 0 ? <div className="text-flex-muted text-sm">Нет серверов. Создайте кнопкой + в левой панели.</div> : guilds.map(g => (
+            <button key={g.id} onClick={() => navigate(`/channels/${g.id}/${g.channels.find(c=>c.type==='text')?.id || ''}`)} className="w-full text-left px-3 py-2 rounded hover:bg-flex-hover/60">
+              <div className="text-white font-medium">{g.name}</div>
+              <div className="text-xs text-flex-muted">{g.channels.length} каналов, {g.members.length} участников</div>
+            </button>
+          ))}
+        </div>
+        <div className="bg-flex-sidebar p-4 rounded-md">
+          <h3 className="text-white font-semibold mb-2">Как проверить голос</h3>
+          <ol className="text-xs text-flex-muted list-decimal ml-4 space-y-1">
+            <li>Зарегистрируйте два аккаунта (во вкладках разных браузеров/профилей).</li>
+            <li>Создайте сервер, создайте invite, присоединитесь вторым аккаунтом.</li>
+            <li>В каждом аккаунте зайдите в voice канал General (🔊).</li>
+            <li>Разрешите микрофон, наденьте наушники.</li>
+            <li>Если соединение установилось — услышите друг друга. Если ICE failed — сеть требует TURN.</li>
+          </ol>
+          <div className="mt-3 text-[11px] text-flex-yellow">Без TURN некоторые CGNAT/symmetric NAT подключения не пройдут. Это честно указано и в коде показывается предупреждение.</div>
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-white font-medium truncate">{f.user.displayName}</div>
-        <div className="text-xs text-flex-muted">@{f.user.username}</div>
-      </div>
-      {incoming ? (
-        <>
-          <button onClick={accept} className="text-flex-green hover:bg-flex-green/20 p-2 rounded" title="Accept">✓</button>
-          <button onClick={remove} className="text-flex-red hover:bg-flex-red/20 p-2 rounded" title="Decline">✕</button>
-        </>
-      ) : (
-        <>
-          <button onClick={message} className="opacity-0 group-hover:opacity-100 text-flex-muted hover:text-white p-2 rounded" title="Message">💬</button>
-          <button onClick={remove} className="opacity-0 group-hover:opacity-100 text-flex-red hover:bg-flex-red/20 p-2 rounded" title="Remove">✕</button>
-        </>
-      )}
     </div>
   );
 }

@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { api } from '../api.js';
 import { useAuth } from '../state/Auth.jsx';
 import { useApp } from '../state/AppState.jsx';
+import { updateProfile } from '../lib/db.js';
 
 export default function StatusPicker({ onClose }) {
   const { user, updateUser } = useAuth();
   const { showToast } = useApp();
-  const [custom, setCustom] = useState(user.customStatus || '');
+  const [custom, setCustom] = useState(user?.customStatus || '');
   const statuses = [
     { id: 'online', label: 'Online', color: 'bg-flex-green' },
     { id: 'idle', label: 'Away', color: 'bg-flex-yellow' },
@@ -15,8 +15,8 @@ export default function StatusPicker({ onClose }) {
   ];
   async function setStatus(s) {
     try {
-      const u = await api.updateMe({ status: s, customStatus: custom });
-      updateUser(u);
+      await updateProfile(user.id, { status: s, customStatus: custom });
+      updateUser({ status: s, customStatus: custom });
       onClose();
     } catch (e) { showToast(e.message, 'error'); }
   }
